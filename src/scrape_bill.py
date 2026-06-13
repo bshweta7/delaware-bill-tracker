@@ -90,16 +90,19 @@ def print_bill_dict(bill_dict):
         print(f"{key.upper()}: {value}")
 
 
-legis_ids = [
-    141874,
-    142724
-]
+def main():
+    legis_ids = [
+        141874,
+        142724
+    ]
 
-bills = []
-for legis_id in legis_ids:
-    bills.append(parse_bill(legis_id))
+    bills = []
+    for legis_id in legis_ids:
+        bills.append(parse_bill(legis_id))
 
-df = pd.DataFrame(bills)
-print(df)
+    df = pd.DataFrame(bills)
+    df.to_csv("bills.csv", index=False)
 
-df.to_csv("bills.csv", index=False)
+
+if __name__ == "__main__":
+    main()
