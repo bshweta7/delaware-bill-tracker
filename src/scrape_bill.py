@@ -101,3 +101,5 @@ for legis_id in legis_ids:
 
 df = pd.DataFrame(bills)
 print(df)
+
+df.to_csv("bills.csv", index=False)
