@@ -1,5 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
+import pandas as pd
 
 BASE_URL = "https://legis.delaware.gov"
 
@@ -89,8 +90,14 @@ def print_bill_dict(bill_dict):
         print(f"{key.upper()}: {value}")
 
 
-bill = parse_bill(141874)
-print_bill_dict(bill)
+legis_ids = [
+    141874,
+    142724
+]
 
-bill = parse_bill(142724)
-print_bill_dict(bill)
+bills = []
+for legis_id in legis_ids:
+    bills.append(parse_bill(legis_id))
+
+df = pd.DataFrame(bills)
+print(df)
