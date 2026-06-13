@@ -90,11 +90,26 @@ def print_bill_dict(bill_dict):
         print(f"{key.upper()}: {value}")
 
 
+def load_legis_ids(filename):
+    """
+    Read Delaware legislation IDs from a text file.
+
+    Args:
+        filename: Path to a text file containing one legislation ID per line.
+
+    Returns:
+        List of legislation IDs parsed from the file.
+    """
+    with open(filename, encoding="utf-8") as f:
+        return [
+            int(line.strip())
+            for line in f
+            if line.strip()
+        ]
+
+
 def main():
-    legis_ids = [
-        141874,
-        142724
-    ]
+    legis_ids = load_legis_ids("legis_ids.txt")
 
     bills = []
     for legis_id in legis_ids:
