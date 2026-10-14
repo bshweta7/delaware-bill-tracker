@@ -30,3 +30,7 @@ SUMMARY_MODEL = "claude-opus-5-5"
 
 def bill_url(legislation_id: int) -> str:
     return f"{BASE_URL}/BillDetail?LegislationId={legislation_id}"
+
+
+def legislator_url(person_id: int) -> str:
+    return f"{BASE_URL}/LegislatorDetail?personId={person_id}"
