@@ -221,10 +221,14 @@ def test_fetch_roll_calls_retries_error_pages():
     assert session.calls == 3
 
 
-def test_fetch_roll_calls_gives_up():
+def test_fetch_roll_calls_gives_up_without_a_final_sleep(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(legislators.time, "sleep", sleeps.append)
     session = FlakyFeedSession(failures=legislators.FEED_ATTEMPTS)
     with pytest.raises(LegisApiError, match="error page"):
-        legislators.fetch_roll_calls(10, 153, session=session, retry_delay=0)
+        legislators.fetch_roll_calls(10, 153, session=session, retry_delay=1)
+    assert session.calls == legislators.FEED_ATTEMPTS
+    assert sleeps == [1, 2, 4, 8]  # backoff between attempts, none after the last
 
 
 # ------------------------------------------------------------------- elections

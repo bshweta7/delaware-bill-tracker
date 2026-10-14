@@ -271,7 +271,8 @@ def fetch_roll_calls(
         response.raise_for_status()
         if "xml" in response.headers.get("Content-Type", ""):
             return parse_roll_calls(response.text)
-        time.sleep(retry_delay * 2**attempt)
+        if attempt < FEED_ATTEMPTS - 1:
+            time.sleep(retry_delay * 2**attempt)
     raise LegisApiError(f"The roll call feed for person {person_id} kept returning an error page.")
 
 
