@@ -483,6 +483,11 @@ def election_note(chamber: str, next_election: date) -> str:
 
 
 UNAVAILABLE = "Unavailable"
+PARTICIPATION_NOTE = (
+    "Share of roll calls where they voted Yes or No. Both \"Absent\" and \"Not Voting\" (present but "
+    "didn't vote) count as missed. The record doesn't say why: absences can be excused, and members "
+    "sometimes don't vote on purpose, for example over a conflict of interest."
+)
 SPONSOR_METRICS = ["Primary sponsor", "Additional primary sponsor", "Co-sponsored"]
 NOT_LOADED = (
     "Couldn't load {what} from legis.delaware.gov, so it isn't shown here. "
@@ -573,6 +578,7 @@ def show_legislator(member: pd.Series) -> None:
         cols[4].metric(
             "Roll calls voted", f"{vote_summary.participation_rate:.0%}",
             f"missed {vote_summary.missed} of {vote_summary.roll_calls:,}", delta_color="off", delta_arrow="off",
+            help=PARTICIPATION_NOTE,
         )
     if sponsored is not None:
         st.caption(
@@ -658,6 +664,7 @@ def show_votes(votes: pd.DataFrame | None, fetched: pd.Timestamp | None, person_
     vote_summary = stats.vote_record(votes, legislators.MISSED_VOTES)
     counts = " · ".join(f"{choice}: {vote_summary.counts.get(choice, 0):,}" for choice in legislators.VOTE_CHOICES)
     st.caption(f"{vote_summary.roll_calls:,} roll calls this session, fetched live {as_of(fetched)}. {counts}")
+    st.caption(PARTICIPATION_NOTE)
     show = st.segmented_control(
         "Show votes", ["No votes", "Missed votes", "All"], default="No votes", key=f"votes-{person_id}",
     )

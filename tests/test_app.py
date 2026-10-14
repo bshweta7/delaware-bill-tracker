@@ -186,3 +186,11 @@ def test_sponsorships_newer_than_the_data_are_flagged(stubs):
     app = pick_from_list(run_app(), senate=17)
     assert metrics(app)["Primary sponsor"][0] == "1"
     assert "1 item they sponsored is newer than the downloaded bill data" in texts(app)
+
+
+def test_participation_explains_absent_and_not_voting(stubs):
+    app = pick_from_list(run_app(), senate=17)
+    voted = next(metric for metric in app.metric if metric.label == "Roll calls voted")
+    assert (voted.value, voted.delta) == ("67%", "missed 1 of 3")  # the fixture has one Absent
+    assert '"Absent" and "Not Voting"' in voted.help
+    assert '"Absent" and "Not Voting" (present but didn\'t vote) count as missed' in texts(app)
