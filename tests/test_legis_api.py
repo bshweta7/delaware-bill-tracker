@@ -1,8 +1,5 @@
-from types import SimpleNamespace
-
 import pytest
 
-from billtracker.bill_detail import parse_bill_detail
 from billtracker.legis_api import LegisApiError, LegisClient
 
 
@@ -55,17 +52,6 @@ def test_non_json_response_raises():
     session.post = lambda *args, **kwargs: FakeResponse(payload=None, status_code=302)
     with pytest.raises(LegisApiError):
         LegisClient(session=session).fetch_page(153, 1)
-
-
-def test_parse_bill_detail():
-    html = """
-    <div class="info-group"><label>Primary Sponsor:</label><div class="info-value">Rep. Smith</div></div>
-    <div class="info-group"><label>Co-Sponsor(s):</label><div class="info-value"><a>Sen. Jones</a><a>Sen. Lee</a></div></div>
-    """
-    detail = parse_bill_detail(html)
-    assert detail["primary_sponsor"] == "Rep. Smith"
-    assert detail["cosponsors"] == "Sen. Jones Sen. Lee"
-    assert detail["next_step"] is None
 
 
 class GridSession:

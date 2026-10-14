@@ -83,8 +83,6 @@ CATEGORY_KEYWORDS: dict[str, list[str]] = {
     ],
 }
 
-CATEGORIES = [*CATEGORY_KEYWORDS, CEREMONIAL, OTHER]
-
 # Delaware Code title number -> category.
 CODE_TITLE_CATEGORIES: dict[int, str] = {
     1: "Government & Elections",
