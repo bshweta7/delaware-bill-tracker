@@ -178,3 +178,23 @@ def sponsor_record(sponsored: pd.DataFrame) -> SponsorRecord:
         primary_passed=int((is_primary & sponsored["stage"].isin(SUCCESS_STAGES)).sum()),
         cosponsored=int((~is_primary).sum()),
     )
+
+
+@dataclass(frozen=True)
+class VoteRecord:
+    roll_calls: int
+    counts: dict[str, int]  # vote choice -> count
+    missed: int
+
+    @property
+    def participation_rate(self) -> float:
+        return 1 - self.missed / self.roll_calls if self.roll_calls else 0.0
+
+
+def vote_record(votes: pd.DataFrame, missed_choices: set[str]) -> VoteRecord:
+    counts = votes["vote"].value_counts()
+    return VoteRecord(
+        roll_calls=len(votes),
+        counts={choice: int(count) for choice, count in counts.items()},
+        missed=int(votes["vote"].isin(missed_choices).sum()),
+    )

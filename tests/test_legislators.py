@@ -1,11 +1,12 @@
 import base64
 from datetime import date
 
+import pandas as pd
 import pytest
 
 from billtracker import legislators, pipeline, stats
 from billtracker.families import build_families
-from billtracker.legis_api import LegisClient
+from billtracker.legis_api import LegisApiError, LegisClient
 
 
 # ---------------------------------------------------------------------- roster
@@ -139,3 +140,88 @@ def test_sponsored_families_collapses_a_family_to_its_strongest_role(items):
     record = stats.sponsor_record(sponsored)
     assert (record.primary, record.primary_passed, record.cosponsored) == (1, 1, 1)
     assert record.primary_pass_rate == 1.0
+
+
+# ------------------------------------------------------------------ roll calls
+
+ROLL_CALL_RSS = """<rss version="2.0"><channel>
+<item>
+  <guid isPermaLink="false">101</guid>
+  <link>https://legis.delaware.gov/BillDetail?legislationId=2</link>
+  <category>Vote Type - No</category>
+  <title>HS 1 for HB 1 w/ HA 1</title>
+  <description><![CDATA[AN ACT RELATING TO SCHOOLS.<br><br>Voted: N<br>Pass Req.: SM<br>Yes: 30<br>No: 9<br>Absent: 2<br>N/V: 0]]></description>
+  <pubDate>Wed, 01 Jul 2026 05:32:47 -0400</pubDate>
+</item>
+<item>
+  <guid isPermaLink="false">100</guid>
+  <link>https://legis.delaware.gov/Nomination?nominationId=7</link>
+  <category>Vote Type - Absent</category>
+  <title>Pat Smith</title>
+  <description><![CDATA[PatSmith]]></description>
+  <pubDate>Tue, 30 Jun 2026 15:00:00 -0400</pubDate>
+</item>
+<item>
+  <guid isPermaLink="false">99</guid>
+  <link>https://legis.delaware.gov/BillDetail?legislationId=5</link>
+  <category>Vote Type - Yes</category>
+  <title>SB 7</title>
+  <description><![CDATA[AN ACT RELATING TO FIREARMS.<br><br>Voted: Y<br>Yes: 21<br>No: 0<br>Absent: 0]]></description>
+  <pubDate>Mon, 29 Jun 2026 12:00:00 -0400</pubDate>
+</item>
+</channel></rss>"""
+
+
+def test_parse_roll_calls():
+    votes = legislators.parse_roll_calls(ROLL_CALL_RSS)
+    assert list(votes["roll_call_id"]) == [101, 100, 99]  # newest first
+    first = votes.iloc[0]
+    assert first["vote"] == "No"
+    assert first["legislation_id"] == 2
+    assert first["kind"] == "Legislation"
+    assert first["title"] == "AN ACT RELATING TO SCHOOLS."
+    assert (first["total_yes"], first["total_no"], first["total_absent"]) == (30, 9, 2)
+    assert first["date"] == pd.Timestamp("2026-07-01 05:32:47")
+
+    nomination = votes.iloc[1]
+    assert nomination["kind"] == "Nomination"
+    assert nomination["title"] == "Confirm Pat Smith"
+    assert pd.isna(nomination["legislation_id"])
+
+
+def test_vote_record():
+    record = stats.vote_record(legislators.parse_roll_calls(ROLL_CALL_RSS), legislators.MISSED_VOTES)
+    assert record.roll_calls == 3
+    assert record.counts == {"No": 1, "Absent": 1, "Yes": 1}
+    assert record.missed == 1
+    assert record.participation_rate == pytest.approx(2 / 3)
+
+
+class FlakyFeedSession:
+    """Answers with the site's HTML error page a few times before the real feed."""
+
+    def __init__(self, failures):
+        self.failures = failures
+        self.calls = 0
+
+    def get(self, url, **kwargs):
+        self.calls += 1
+        response = FakeResponse(None)
+        if self.calls <= self.failures:
+            response.headers, response.text = {"Content-Type": "text/html"}, "<html><title>Page not found</title>"
+        else:
+            response.headers, response.text = {"Content-Type": "application/xml"}, ROLL_CALL_RSS
+        return response
+
+
+def test_fetch_roll_calls_retries_error_pages():
+    session = FlakyFeedSession(failures=2)
+    votes = legislators.fetch_roll_calls(10, 153, session=session, retry_delay=0)
+    assert len(votes) == 3
+    assert session.calls == 3
+
+
+def test_fetch_roll_calls_gives_up():
+    session = FlakyFeedSession(failures=legislators.FEED_ATTEMPTS)
+    with pytest.raises(LegisApiError, match="error page"):
+        legislators.fetch_roll_calls(10, 153, session=session, retry_delay=0)

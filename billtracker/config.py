@@ -10,6 +10,7 @@ LEGISLATOR_ROSTER_URLS = {
     "House": f"{BASE_URL}/json/House/GetRepresentatives",
 }
 SPONSORED_LEGISLATION_URL = f"{BASE_URL}/json/AssemblyMember/GetSponsoredLegislation"
+ROLL_CALL_FEED_URL = f"{BASE_URL}/rss/RssFeeds/RollCalls"
 
 # Free, keyless US Census geocoder; returns state legislative districts for an address.
 CENSUS_GEOCODER_URL = "https://geocoding.geo.census.gov/geocoder/geographies/onelineaddress"

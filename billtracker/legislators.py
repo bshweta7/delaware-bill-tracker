@@ -1,12 +1,15 @@
-"""Legislators: who they are, how long they've served, and what they sponsored.
+"""Legislators: who they are, how long they've served, and how they've voted.
 
 The roster and sponsorships come from JSON endpoints (see ``legis_api``). A
-legislator's profile (years of service, committees, contact details) is only
-published as an HTML page, which this module fetches and parses on demand.
+legislator's profile (years of service, committees, contact details) and their
+roll call votes are only published as an HTML page and an RSS feed, which this
+module fetches and parses on demand.
 """
 
 import base64
 import re
+import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -15,12 +18,16 @@ import requests
 from bs4 import BeautifulSoup
 
 from billtracker import config
-from billtracker.legis_api import LegisClient
+from billtracker.legis_api import LegisApiError, LegisClient
 
 CHAMBERS = ["Senate", "House"]
 TITLES = {"Senate": "Senator", "House": "Representative"}
 PARTIES = {"D": "Democrat", "R": "Republican"}
 NO_BIOGRAPHY = "Contact for more information"
+
+# The roll call feed labels each vote "Vote Type - Yes", "Vote Type - Absent", etc.
+VOTE_CHOICES = ["Yes", "No", "Absent", "Not Voting"]
+MISSED_VOTES = {"Absent", "Not Voting"}
 
 
 # ---------------------------------------------------------------------- roster
@@ -199,3 +206,70 @@ def tidy_sponsorships(rows: list[dict]) -> pd.DataFrame:
         },
         columns=["legislation_id", "role"],
     )
+
+
+# ------------------------------------------------------------------ roll calls
+
+_LEGISLATION_ID = re.compile(r"legislationId=(\d+)", re.IGNORECASE)
+_TALLY = {name: re.compile(rf"{name}:\s*(\d+)") for name in ("Yes", "No", "Absent")}
+
+
+def parse_roll_calls(xml_text: str) -> pd.DataFrame:
+    """One row per roll call the legislator was on, newest first."""
+    rows = []
+    for item in ET.fromstring(xml_text).iter("item"):
+        description = item.findtext("description") or ""
+        link = item.findtext("link") or ""
+        id_match = _LEGISLATION_ID.search(link)
+        motion = (item.findtext("title") or "").strip()
+        # The Senate also votes to confirm the governor's nominees; those link to a
+        # nomination, not a bill, and the feed's description is just the name squashed.
+        is_nomination = "/Nomination" in link
+        tallies = {
+            f"total_{name.lower()}": int(match.group(1)) if (match := pattern.search(description)) else None
+            for name, pattern in _TALLY.items()
+        }
+        rows.append(
+            {
+                "roll_call_id": int(item.findtext("guid")),
+                "legislation_id": int(id_match.group(1)) if id_match else None,
+                "kind": "Nomination" if is_nomination else "Legislation",
+                "motion": motion,
+                "title": f"Confirm {motion}" if is_nomination else description.split("<br>", 1)[0].strip(),
+                "vote": (item.findtext("category") or "").removeprefix("Vote Type - ").strip(),
+                "date": pd.to_datetime(item.findtext("pubDate"), utc=True),
+                **tallies,
+                "url": link,
+            }
+        )
+    columns = ["roll_call_id", "legislation_id", "kind", "motion", "title", "vote", "date",
+               "total_yes", "total_no", "total_absent", "url"]
+    votes = pd.DataFrame(rows, columns=columns)
+    votes["date"] = pd.to_datetime(votes["date"], utc=True).dt.tz_convert("America/New_York").dt.tz_localize(None)
+    return votes.sort_values("date", ascending=False, ignore_index=True)
+
+
+FEED_ATTEMPTS = 5
+
+
+def fetch_roll_calls(
+    person_id: int, assembly_id: int, session: requests.Session | None = None, retry_delay: float = 1.0
+) -> pd.DataFrame:
+    """A legislator's roll call votes in a session.
+
+    The feed often answers with an HTML "Page not found" page (status 200) instead
+    of XML, apparently from one bad server behind the load balancer, so retry.
+    """
+    session = session or requests.Session()
+    for attempt in range(FEED_ATTEMPTS):
+        response = session.get(
+            config.ROLL_CALL_FEED_URL,
+            params={"personId": person_id, "assemblyId": assembly_id},
+            headers=config.REQUEST_HEADERS,
+            timeout=config.REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        if "xml" in response.headers.get("Content-Type", ""):
+            return parse_roll_calls(response.text)
+        time.sleep(retry_delay * 2**attempt)
+    raise LegisApiError(f"The roll call feed for person {person_id} kept returning an error page.")
