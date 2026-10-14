@@ -1,6 +1,7 @@
 import pandas as pd
 
 from billtracker import pipeline, storage
+from billtracker.families import build_families
 from billtracker.normalize import normalize_row, parse_ms_date
 from tests.conftest import make_raw_row
 
@@ -39,7 +40,7 @@ def test_csv_round_trip(raw_rows, tmp_path):
     storage.save_items(pipeline.build_items(raw_rows), path)
 
     items = storage.load_items(path)
-    families = storage.load_families(path)
+    families = build_families(items)
 
     assert len(items) == len(raw_rows)
     assert pd.api.types.is_datetime64_any_dtype(items["introduced"])
