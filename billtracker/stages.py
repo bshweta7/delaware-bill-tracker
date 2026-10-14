@@ -19,22 +19,6 @@ STRICKEN = "Stricken"
 SUBSTITUTED = "Substituted"
 PENDING = "Pending"
 
-# Order used for sorting and charts: progress first, then dead ends.
-STAGE_ORDER = [
-    IN_COMMITTEE,
-    OUT_OF_COMMITTEE,
-    PASSED_ONE_CHAMBER,
-    PASSED_BOTH_CHAMBERS,
-    ENACTED,
-    ADOPTED,
-    PENDING,
-    VETOED,
-    DEFEATED,
-    TABLED,
-    STRICKEN,
-    SUBSTITUTED,
-]
-
 # Stages where the legislation achieved what it set out to do.
 SUCCESS_STAGES = {ENACTED, ADOPTED}
 # Stages where the legislation can no longer advance (in this form).
