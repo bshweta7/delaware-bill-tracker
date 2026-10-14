@@ -3,12 +3,15 @@
     streamlit run app.py
 """
 
+from datetime import date
+
 import anthropic
 import pandas as pd
 import streamlit as st
 
-from billtracker import charts, config, stats
+from billtracker import charts, config, legislators, stats
 from billtracker.bill_detail import fetch_bill_detail
+from billtracker.districts import AddressNotFound, find_districts
 from billtracker.categories import CATEGORIES, CEREMONIAL
 from billtracker.families import build_families
 from billtracker.pipeline import refresh
@@ -39,6 +42,31 @@ def load_data(csv_mtime: float) -> tuple[pd.DataFrame, pd.DataFrame]:
 @st.cache_data(show_spinner="Fetching sponsors from legis.delaware.gov…", ttl=3600)
 def cached_bill_detail(legislation_id: int) -> dict:
     return fetch_bill_detail(legislation_id)
+
+
+@st.cache_data(show_spinner="Loading legislators…", ttl=86400)
+def cached_roster() -> pd.DataFrame:
+    return legislators.roster()
+
+
+@st.cache_data(show_spinner="Looking up your districts…", ttl=86400)
+def cached_districts(address: str):
+    return find_districts(address)
+
+
+@st.cache_data(show_spinner="Loading legislator profile…", ttl=86400)
+def cached_profile(person_id: int) -> legislators.Profile:
+    return legislators.fetch_profile(person_id)
+
+
+@st.cache_data(show_spinner="Loading sponsored legislation…", ttl=3600)
+def cached_sponsorships(person_id: int, assembly_id: int) -> pd.DataFrame:
+    return legislators.sponsored_legislation(person_id, assembly_id)
+
+
+@st.cache_data(show_spinner="Loading roll call votes…", ttl=3600)
+def cached_roll_calls(person_id: int, assembly_id: int) -> pd.DataFrame:
+    return legislators.fetch_roll_calls(person_id, assembly_id)
 
 
 def theme_mode() -> str:
@@ -150,8 +178,8 @@ kpis[3].metric("Still in progress", f"{summary.still_moving:,}")
 kpis[4].metric("Amendments filed", f"{summary.amendments:,}")
 kpis[5].metric("Substitutes filed", f"{summary.substitutes:,}")
 
-overview_tab, timeline_tab, category_tab, explorer_tab = st.tabs(
-    ["Overview", "Timeline", "Categories", "Bill explorer"]
+overview_tab, timeline_tab, category_tab, explorer_tab, legislator_tab = st.tabs(
+    ["Overview", "Timeline", "Categories", "Bill explorer", "Your legislators"]
 )
 category_table = stats.category_breakdown(shown_families)
 category_order = list(category_table["category"])
@@ -368,3 +396,232 @@ with explorer_tab:
     if selected_rows:
         st.divider()
         show_family(table.iloc[selected_rows[0]])
+
+
+# ------------------------------------------------------------ your legislators
+
+BILL_TABLE_COLUMNS = {
+    "display_code": "Legislation",
+    "short_title": st.column_config.TextColumn("Title", width="large"),
+    "category": "Category",
+    "stage": "Stage",
+    "last_action": st.column_config.DateColumn("Last action", format="MMM D, YYYY"),
+    "url": st.column_config.LinkColumn("Link", display_text="Open"),
+}
+
+
+def choose_districts(seats: pd.DataFrame) -> tuple[int | None, int | None]:
+    """Ask for an address (or a manual pick). Returns (senate district, house district)."""
+    method = st.segmented_control(
+        "Find your legislators", ["By home address", "Pick from a list"], default="By home address"
+    )
+    if method == "Pick from a list":
+        labels = {(row["chamber"], row["district"]): legislators.label(row) for _, row in seats.iterrows()}
+        left, right = st.columns(2)
+        senate = left.selectbox(
+            "Your state senator", sorted(seats.loc[seats["chamber"] == "Senate", "district"]),
+            index=None, format_func=lambda district: labels[("Senate", district)],
+        )
+        house = right.selectbox(
+            "Your state representative", sorted(seats.loc[seats["chamber"] == "House", "district"]),
+            index=None, format_func=lambda district: labels[("House", district)],
+        )
+        return senate, house
+
+    with st.form("address"):
+        address = st.text_input(
+            "Home address", placeholder="411 Legislative Ave, Dover, DE 19901",
+            help="Sent to the US Census Bureau's geocoder to look up your districts. Not stored.",
+        )
+        submitted = st.form_submit_button("Find my legislators", type="primary")
+    if submitted and address.strip():
+        try:
+            st.session_state["district_match"] = cached_districts(address.strip())
+        except AddressNotFound as error:
+            st.session_state.pop("district_match", None)
+            st.warning(str(error))
+        except Exception as error:  # network errors shouldn't break the page
+            st.session_state.pop("district_match", None)
+            st.error(f"Couldn't reach the address lookup service: {error}")
+    match = st.session_state.get("district_match")
+    if match is None:
+        return None, None
+    st.caption(
+        f"Districts for **{match.matched_address.title()}**: "
+        f"Senate District {match.senate_district}, House District {match.house_district}."
+    )
+    return match.senate_district, match.house_district
+
+
+def election_note(chamber: str, next_election: date) -> str:
+    when = f"{next_election:%B} {next_election.day}, {next_election.year}"
+    if chamber == "House":
+        return (
+            f"Representatives serve two-year terms, so every House seat is on the ballot "
+            f"at each general election. The next one is **{when}**."
+        )
+    return (
+        f"Senators serve four-year terms on a staggered schedule, so not every Senate seat "
+        f"is on the ballot at each election. The next general election is **{when}**; check "
+        f"[elections.delaware.gov](https://elections.delaware.gov) to see whether this seat is up."
+    )
+
+
+def show_legislator(member: pd.Series) -> None:
+    if pd.isna(member["person_id"]):
+        st.info(f"{member['chamber']} District {member['district']} is currently vacant.")
+        return
+    person_id = int(member["person_id"])
+    today = date.today()
+
+    try:
+        profile = cached_profile(person_id)
+    except Exception as error:  # network/site errors shouldn't break the page
+        st.error(f"Couldn't load the legislator's profile: {error}")
+        profile = legislators.Profile()
+
+    photo, about = st.columns([1, 5], gap="medium")
+    if profile.photo:
+        photo.image(profile.photo, width="stretch")
+    with about:
+        title = legislators.TITLES[member["chamber"]]
+        party = legislators.PARTIES.get(member["party"], member["party"] or "")
+        st.subheader(f"{title} {member['name']}")
+        badges = [f":blue-badge[{party}]", f":gray-badge[{member['chamber']} District {member['district']}]"]
+        if isinstance(member["role"], str):
+            badges.append(f":violet-badge[{member['role']}]")
+        st.markdown(" ".join(badges))
+        contact = [f"[Profile on legis.delaware.gov]({member['profile_url']})"]
+        if profile.email:
+            contact.insert(0, f"✉️ [{profile.email}](mailto:{profile.email})")
+        if profile.phone:
+            contact.insert(1, f"📞 {profile.phone}")
+        if isinstance(member["caucus_url"], str):
+            contact.append(f"[Caucus page]({member['caucus_url']})")
+        st.markdown(" · ".join(contact))
+
+    try:
+        sponsored = stats.sponsored_families(cached_sponsorships(person_id, assembly), items, families)
+    except Exception as error:
+        st.error(f"Couldn't load sponsored legislation: {error}")
+        sponsored = families.iloc[0:0].assign(role=pd.Series(dtype=str))
+    try:
+        votes = cached_roll_calls(person_id, assembly)
+    except Exception as error:
+        st.error(f"Couldn't load roll call votes: {error}")
+        votes = None
+
+    record = stats.sponsor_record(sponsored)
+    next_election = legislators.next_general_election(today)
+    years = profile.years_in_office(today)
+    cols = st.columns(5)
+    cols[0].metric(
+        "In the legislature since", profile.first_elected or "—",
+        f"{years} year{'s' if years != 1 else ''}" if years else None, delta_color="off", delta_arrow="off",
+    )
+    cols[1].metric("Bills & resolutions led", record.primary)
+    cols[2].metric(
+        "Passed", record.primary_passed,
+        f"{record.primary_pass_rate:.0%} of those led" if record.primary else None,
+        delta_color="off", delta_arrow="off",
+    )
+    cols[3].metric("Co-sponsored", record.cosponsored)
+    has_votes = votes is not None and not votes.empty
+    if has_votes:
+        vote_summary = stats.vote_record(votes, legislators.MISSED_VOTES)
+        cols[4].metric(
+            "Roll calls voted", f"{vote_summary.participation_rate:.0%}",
+            f"missed {vote_summary.missed} of {vote_summary.roll_calls:,}", delta_color="off", delta_arrow="off",
+        )
+    st.caption(
+        f"For the {assembly}th General Assembly. \"Led\" counts legislation where they were the primary "
+        "or an additional primary sponsor; a bill and its substitutes count once."
+    )
+
+    st.markdown(f"**Next election.** {election_note(member['chamber'], next_election)}")
+
+    left, right = st.columns(2, gap="large")
+    with left:
+        st.markdown("**Legislative service**")
+        st.write(profile.service_text or "Not listed.")
+        if profile.service_text and not profile.terms:
+            st.caption("Couldn't read the years of service from the site's wording.")
+    with right:
+        st.markdown("**Committees**")
+        if profile.committees:
+            st.markdown("\n".join(f"- {name}, {role}" for name, role in profile.committees))
+        else:
+            st.write("None listed.")
+    if profile.biography:
+        with st.expander("Biography (from their legislative profile)"):
+            st.write(profile.biography)
+
+    led = sponsored[sponsored["role"] != "Co-sponsor"]
+    st.markdown(f"#### Legislation they led ({len(led)})")
+    if led.empty:
+        st.write("None this session.")
+    else:
+        topics = stats.category_outcomes(led)
+        topic_order = list(topics.groupby("category")["count"].sum().sort_values(ascending=False).index)
+        st.altair_chart(charts.category_outcome_bars(topics, topic_order, mode), width="stretch")
+        st.dataframe(
+            led[list(BILL_TABLE_COLUMNS) + ["role"]],
+            hide_index=True, width="stretch",
+            column_config=BILL_TABLE_COLUMNS | {"role": "Role"},
+        )
+
+    cosponsored = sponsored[sponsored["role"] == "Co-sponsor"]
+    with st.expander(f"Legislation they co-sponsored ({len(cosponsored)})"):
+        st.dataframe(cosponsored[list(BILL_TABLE_COLUMNS)], hide_index=True, width="stretch", column_config=BILL_TABLE_COLUMNS)
+
+    st.markdown("#### Voting record")
+    if not has_votes:
+        st.write("No roll call votes recorded this session.")
+        return
+    counts = " · ".join(f"{choice}: {vote_summary.counts.get(choice, 0):,}" for choice in legislators.VOTE_CHOICES)
+    st.caption(f"{vote_summary.roll_calls:,} roll calls this session. {counts}")
+    show = st.segmented_control(
+        "Show votes", ["No votes", "Missed votes", "All"], default="No votes", key=f"votes-{person_id}",
+    )
+    if show == "No votes":
+        shown = votes[votes["vote"] == "No"]
+    elif show == "Missed votes":
+        shown = votes[votes["vote"].isin(legislators.MISSED_VOTES)]
+    else:
+        shown = votes
+    st.dataframe(
+        shown[["date", "motion", "title", "vote", "total_yes", "total_no", "url"]],
+        hide_index=True, width="stretch",
+        column_config={
+            "date": st.column_config.DatetimeColumn("Date", format="MMM D, YYYY"),
+            "motion": "Legislation",
+            "title": st.column_config.TextColumn("Title", width="large"),
+            "vote": "Their vote",
+            "total_yes": st.column_config.NumberColumn("Yes (all)"),
+            "total_no": st.column_config.NumberColumn("No (all)"),
+            "url": st.column_config.LinkColumn("Link", display_text="Open"),
+        },
+    )
+
+
+with legislator_tab:
+    st.caption(
+        "See who represents you in Dover and what they've been doing this session. "
+        "This tab ignores the sidebar filters."
+    )
+    try:
+        seats = cached_roster()
+    except Exception as error:
+        st.error(f"Couldn't load the list of legislators: {error}")
+        seats = None
+    if seats is not None:
+        senate_district, house_district = choose_districts(seats)
+        chosen = [
+            seats[(seats["chamber"] == chamber) & (seats["district"] == district)].iloc[0]
+            for chamber, district in (("Senate", senate_district), ("House", house_district))
+            if district is not None
+        ]
+        if chosen:
+            for panel, member in zip(st.tabs([legislators.label(m) for m in chosen]), chosen):
+                with panel:
+                    show_legislator(member)
