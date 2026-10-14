@@ -472,6 +472,13 @@ def election_note(chamber: str, next_election: date) -> str:
     )
 
 
+UNAVAILABLE = "Unavailable"
+NOT_LOADED = (
+    "Couldn't load {what} from legis.delaware.gov, so it isn't shown here. "
+    "This doesn't mean there is none. Try again later."
+)
+
+
 def show_legislator(member: pd.Series) -> None:
     if pd.isna(member["person_id"]):
         st.info(f"{member['chamber']} District {member['district']} is currently vacant.")
@@ -479,14 +486,16 @@ def show_legislator(member: pd.Series) -> None:
     person_id = int(member["person_id"])
     today = date.today()
 
+    # Each source is None when it couldn't be loaded, so the page can say "unavailable"
+    # instead of showing an empty record that looks like a real zero.
     try:
         profile = cached_profile(person_id)
     except Exception as error:  # network/site errors shouldn't break the page
         st.error(f"Couldn't load the legislator's profile: {error}")
-        profile = legislators.Profile()
+        profile = None
 
     photo, about = st.columns([1, 5], gap="medium")
-    if profile.photo:
+    if profile and profile.photo:
         photo.image(profile.photo, width="stretch")
     with about:
         title = legislators.TITLES[member["chamber"]]
@@ -497,9 +506,9 @@ def show_legislator(member: pd.Series) -> None:
             badges.append(f":violet-badge[{member['role']}]")
         st.markdown(" ".join(badges))
         contact = [f"[Profile on legis.delaware.gov]({member['profile_url']})"]
-        if profile.email:
+        if profile and profile.email:
             contact.insert(0, f"✉️ [{profile.email}](mailto:{profile.email})")
-        if profile.phone:
+        if profile and profile.phone:
             contact.insert(1, f"📞 {profile.phone}")
         if isinstance(member["caucus_url"], str):
             contact.append(f"[Caucus page]({member['caucus_url']})")
@@ -509,33 +518,39 @@ def show_legislator(member: pd.Series) -> None:
         sponsored = stats.sponsored_families(cached_sponsorships(person_id, assembly), items, families)
     except Exception as error:
         st.error(f"Couldn't load sponsored legislation: {error}")
-        sponsored = families.iloc[0:0].assign(role=pd.Series(dtype=str))
+        sponsored = None
     try:
         votes = cached_roll_calls(person_id, assembly)
     except Exception as error:
         st.error(f"Couldn't load roll call votes: {error}")
         votes = None
 
-    record = stats.sponsor_record(sponsored)
     next_election = legislators.next_general_election(today)
-    years = profile.years_served(today)
+    years = profile.years_served(today) if profile else None
+    first_took_office = (profile.first_elected or "—") if profile else UNAVAILABLE
     cols = st.columns(5)
     cols[0].metric(
-        "First took office", profile.first_elected or "—",
+        "First took office", first_took_office,
         f"{years} year{'s' if years != 1 else ''} served" if years is not None else None,
         delta_color="off", delta_arrow="off",
         help="From the Legislative Service text on their profile. Years served add up each term, "
         "in whole years, and leave out any breaks in service.",
     )
-    cols[1].metric("Bills & resolutions led", record.primary)
-    cols[2].metric(
-        "Passed", record.primary_passed,
-        f"{record.primary_pass_rate:.0%} of those led" if record.primary else None,
-        delta_color="off", delta_arrow="off",
-    )
-    cols[3].metric("Co-sponsored", record.cosponsored)
-    has_votes = votes is not None and not votes.empty
-    if has_votes:
+    if sponsored is None:
+        for col, name in zip(cols[1:4], ["Bills & resolutions led", "Passed", "Co-sponsored"]):
+            col.metric(name, UNAVAILABLE)
+    else:
+        record = stats.sponsor_record(sponsored)
+        cols[1].metric("Bills & resolutions led", record.primary)
+        cols[2].metric(
+            "Passed", record.primary_passed,
+            f"{record.primary_pass_rate:.0%} of those led" if record.primary else None,
+            delta_color="off", delta_arrow="off",
+        )
+        cols[3].metric("Co-sponsored", record.cosponsored)
+    if votes is None:
+        cols[4].metric("Roll calls voted", UNAVAILABLE)
+    elif not votes.empty:
         vote_summary = stats.vote_record(votes, legislators.MISSED_VOTES)
         cols[4].metric(
             "Roll calls voted", f"{vote_summary.participation_rate:.0%}",
@@ -548,9 +563,18 @@ def show_legislator(member: pd.Series) -> None:
 
     st.markdown(f"**Next election.** {election_note(member['chamber'], next_election)}")
 
+    show_profile_details(profile)
+    show_sponsored(sponsored)
+    show_votes(votes, person_id)
+
+
+def show_profile_details(profile: legislators.Profile | None) -> None:
     left, right = st.columns(2, gap="large")
     with left:
         st.markdown("**Legislative service**")
+        if profile is None:
+            st.write(NOT_LOADED.format(what="their profile"))
+            return
         st.write(profile.service_text or "Not listed.")
         if profile.service_text and not profile.terms:
             st.caption("Couldn't read the years of service from the site's wording.")
@@ -564,6 +588,12 @@ def show_legislator(member: pd.Series) -> None:
         with st.expander("Biography (from their legislative profile)"):
             st.write(profile.biography)
 
+
+def show_sponsored(sponsored: pd.DataFrame | None) -> None:
+    if sponsored is None:
+        st.markdown("#### Legislation they led")
+        st.write(NOT_LOADED.format(what="the legislation they sponsored"))
+        return
     led = sponsored[sponsored["role"] != "Co-sponsor"]
     st.markdown(f"#### Legislation they led ({len(led)})")
     if led.empty:
@@ -582,10 +612,16 @@ def show_legislator(member: pd.Series) -> None:
     with st.expander(f"Legislation they co-sponsored ({len(cosponsored)})"):
         st.dataframe(cosponsored[list(BILL_TABLE_COLUMNS)], hide_index=True, width="stretch", column_config=BILL_TABLE_COLUMNS)
 
+
+def show_votes(votes: pd.DataFrame | None, person_id: int) -> None:
     st.markdown("#### Voting record")
-    if not has_votes:
-        st.write("No roll call votes recorded this session.")
+    if votes is None:
+        st.write(NOT_LOADED.format(what="their roll call votes"))
         return
+    if votes.empty:
+        st.write("The roll call feed lists no votes for them this session.")
+        return
+    vote_summary = stats.vote_record(votes, legislators.MISSED_VOTES)
     counts = " · ".join(f"{choice}: {vote_summary.counts.get(choice, 0):,}" for choice in legislators.VOTE_CHOICES)
     st.caption(f"{vote_summary.roll_calls:,} roll calls this session. {counts}")
     show = st.segmented_control(

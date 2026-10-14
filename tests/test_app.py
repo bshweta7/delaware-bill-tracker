@@ -138,3 +138,27 @@ def test_addresses_are_not_cached_across_visitors(stubs):
     look_up_address(run_app(), "411 Legislative Ave, Dover, DE")  # a second visitor, same address
     # Both lookups reach the geocoder: no server-side cache is holding the first visitor's address.
     assert stubs.address_lookups == ["411 Legislative Ave, Dover, DE"] * 2
+
+
+@pytest.mark.parametrize("source", ["votes", "sponsorships", "profile"])
+def test_failed_source_is_shown_as_unavailable_not_empty(stubs, source):
+    setattr(stubs, source, ConnectionError("site down"))
+    app = pick_from_list(run_app(), senate=17)
+    shown = texts(app)
+    assert "Couldn't load" in shown
+    assert "This doesn't mean there is none" in shown
+    for looks_like_zero in ["No roll call votes", "lists no votes", "None this session", "None listed", "Not listed"]:
+        assert looks_like_zero not in shown
+    unavailable = {label for label, (value, _) in metrics(app).items() if value == "Unavailable"}
+    assert unavailable == {
+        "votes": {"Roll calls voted"},
+        "sponsorships": {"Bills & resolutions led", "Passed", "Co-sponsored"},
+        "profile": {"First took office"},
+    }[source]
+
+
+def test_confirmed_empty_vote_record_says_so(stubs):
+    stubs.votes = stubs.votes.iloc[0:0]
+    shown = texts(pick_from_list(run_app(), senate=17))
+    assert "The roll call feed lists no votes for them this session." in shown
+    assert "Couldn't load" not in shown
