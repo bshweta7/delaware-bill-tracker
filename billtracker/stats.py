@@ -144,12 +144,17 @@ SPONSOR_ROLE_ORDER = ["Primary sponsor", "Additional primary sponsor", "Co-spons
 
 @dataclass(frozen=True)
 class SponsorRecord:
-    primary: int  # families they were the lead or an additional primary sponsor on
+    """Families by the legislator's role on them. "Passed" means enacted or adopted."""
+
+    primary: int  # they were the lead sponsor
     primary_passed: int
+    additional_primary: int  # listed as a primary sponsor alongside the lead
+    additional_primary_passed: int
     cosponsored: int
 
     @property
     def primary_pass_rate(self) -> float:
+        """Share of the families they led that passed, counting ones still in progress as not passed."""
         return self.primary_passed / self.primary if self.primary else 0.0
 
 
@@ -171,12 +176,21 @@ def sponsored_families(sponsorships: pd.DataFrame, items: pd.DataFrame, families
     return sponsored.sort_values("last_action", ascending=False, ignore_index=True)
 
 
+def sponsorships_not_in_data(sponsorships: pd.DataFrame, items: pd.DataFrame) -> int:
+    """Sponsorships of legislation missing from our data, usually filed since the last refresh."""
+    return int((~sponsorships["legislation_id"].isin(items["legislation_id"])).sum())
+
+
 def sponsor_record(sponsored: pd.DataFrame) -> SponsorRecord:
-    is_primary = sponsored["role"] != "Co-sponsor"
+    passed = sponsored["stage"].isin(SUCCESS_STAGES)
+    is_primary = sponsored["role"] == "Primary sponsor"
+    is_additional = sponsored["role"] == "Additional primary sponsor"
     return SponsorRecord(
         primary=int(is_primary.sum()),
-        primary_passed=int((is_primary & sponsored["stage"].isin(SUCCESS_STAGES)).sum()),
-        cosponsored=int((~is_primary).sum()),
+        primary_passed=int((is_primary & passed).sum()),
+        additional_primary=int(is_additional.sum()),
+        additional_primary_passed=int((is_additional & passed).sum()),
+        cosponsored=int((sponsored["role"] == "Co-sponsor").sum()),
     )
 
 

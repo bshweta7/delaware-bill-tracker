@@ -55,13 +55,23 @@ def cached_profile(person_id: int) -> legislators.Profile:
 
 
 @st.cache_data(show_spinner="Loading sponsored legislation…", ttl=3600)
-def cached_sponsorships(person_id: int, assembly_id: int) -> pd.DataFrame:
-    return legislators.sponsored_legislation(person_id, assembly_id)
+def cached_sponsorships(person_id: int, assembly_id: int) -> tuple[pd.DataFrame, pd.Timestamp]:
+    """The legislator's sponsorships, and when they were fetched."""
+    return legislators.sponsored_legislation(person_id, assembly_id), now_local()
 
 
 @st.cache_data(show_spinner="Loading roll call votes…", ttl=3600)
-def cached_roll_calls(person_id: int, assembly_id: int) -> pd.DataFrame:
-    return legislators.fetch_roll_calls(person_id, assembly_id)
+def cached_roll_calls(person_id: int, assembly_id: int) -> tuple[pd.DataFrame, pd.Timestamp]:
+    """The legislator's roll call votes, and when they were fetched."""
+    return legislators.fetch_roll_calls(person_id, assembly_id), now_local()
+
+
+def now_local() -> pd.Timestamp:
+    return pd.Timestamp.now(tz="America/New_York")
+
+
+def as_of(timestamp: pd.Timestamp) -> str:
+    return f"{timestamp.tz_convert('America/New_York'):%b %d, %Y %I:%M %p}"
 
 
 def theme_mode() -> str:
@@ -473,6 +483,7 @@ def election_note(chamber: str, next_election: date) -> str:
 
 
 UNAVAILABLE = "Unavailable"
+SPONSOR_METRICS = ["Primary sponsor", "Additional primary sponsor", "Co-sponsored"]
 NOT_LOADED = (
     "Couldn't load {what} from legis.delaware.gov, so it isn't shown here. "
     "This doesn't mean there is none. Try again later."
@@ -515,15 +526,17 @@ def show_legislator(member: pd.Series) -> None:
         st.markdown(" · ".join(contact))
 
     try:
-        sponsored = stats.sponsored_families(cached_sponsorships(person_id, assembly), items, families)
+        sponsorships, sponsorships_fetched = cached_sponsorships(person_id, assembly)
     except Exception as error:
         st.error(f"Couldn't load sponsored legislation: {error}")
-        sponsored = None
+        sponsorships = sponsored = None
+    else:
+        sponsored = stats.sponsored_families(sponsorships, items, families)
     try:
-        votes = cached_roll_calls(person_id, assembly)
+        votes, votes_fetched = cached_roll_calls(person_id, assembly)
     except Exception as error:
         st.error(f"Couldn't load roll call votes: {error}")
-        votes = None
+        votes = votes_fetched = None
 
     next_election = legislators.next_general_election(today)
     years = profile.years_served(today) if profile else None
@@ -537,15 +550,20 @@ def show_legislator(member: pd.Series) -> None:
         "in whole years, and leave out any breaks in service.",
     )
     if sponsored is None:
-        for col, name in zip(cols[1:4], ["Bills & resolutions led", "Passed", "Co-sponsored"]):
+        for col, name in zip(cols[1:4], SPONSOR_METRICS):
             col.metric(name, UNAVAILABLE)
     else:
         record = stats.sponsor_record(sponsored)
-        cols[1].metric("Bills & resolutions led", record.primary)
+        cols[1].metric(
+            "Primary sponsor", record.primary,
+            f"{record.primary_passed} passed ({record.primary_pass_rate:.0%})" if record.primary else None,
+            delta_color="off", delta_arrow="off", help="Bills and resolutions they introduced as the lead sponsor.",
+        )
         cols[2].metric(
-            "Passed", record.primary_passed,
-            f"{record.primary_pass_rate:.0%} of those led" if record.primary else None,
+            "Additional primary sponsor", record.additional_primary,
+            f"{record.additional_primary_passed} passed" if record.additional_primary else None,
             delta_color="off", delta_arrow="off",
+            help="Listed as a primary sponsor alongside the lead sponsor, so shared rather than theirs alone.",
         )
         cols[3].metric("Co-sponsored", record.cosponsored)
     if votes is None:
@@ -556,16 +574,27 @@ def show_legislator(member: pd.Series) -> None:
             "Roll calls voted", f"{vote_summary.participation_rate:.0%}",
             f"missed {vote_summary.missed} of {vote_summary.roll_calls:,}", delta_color="off", delta_arrow="off",
         )
-    st.caption(
-        f"For the {assembly}th General Assembly. \"Led\" counts legislation where they were the primary "
-        "or an additional primary sponsor; a bill and its substitutes count once."
-    )
+    if sponsored is not None:
+        st.caption(
+            f"For the {assembly}th General Assembly; a bill and its substitutes count once. **Passed** means "
+            "enacted (bills) or adopted (resolutions). Anything still moving counts as not passed, so the "
+            f"share grows through a session. Sponsorships fetched live {as_of(sponsorships_fetched)}; "
+            f"whether each passed comes from the bill data downloaded {as_of(refreshed)}."
+        )
+        not_in_data = stats.sponsorships_not_in_data(sponsorships, items)
+        if not_in_data:
+            st.warning(
+                f"{not_in_data} item{'s' if not_in_data > 1 else ''} they sponsored "
+                f"{'are' if not_in_data > 1 else 'is'} newer than the downloaded bill data (from "
+                f"{as_of(refreshed)}) and not counted above. Refresh from the sidebar to include "
+                f"{'them' if not_in_data > 1 else 'it'}."
+            )
 
     st.markdown(f"**Next election.** {election_note(member['chamber'], next_election)}")
 
     show_profile_details(profile)
     show_sponsored(sponsored)
-    show_votes(votes, person_id)
+    show_votes(votes, votes_fetched, person_id)
 
 
 def show_profile_details(profile: legislators.Profile | None) -> None:
@@ -591,14 +620,19 @@ def show_profile_details(profile: legislators.Profile | None) -> None:
 
 def show_sponsored(sponsored: pd.DataFrame | None) -> None:
     if sponsored is None:
-        st.markdown("#### Legislation they led")
+        st.markdown("#### Legislation they sponsored")
         st.write(NOT_LOADED.format(what="the legislation they sponsored"))
         return
     led = sponsored[sponsored["role"] != "Co-sponsor"]
-    st.markdown(f"#### Legislation they led ({len(led)})")
+    st.markdown(f"#### Legislation they sponsored ({len(led)})")
     if led.empty:
         st.write("None this session.")
     else:
+        roles = led["role"].value_counts()
+        st.caption(
+            f"As primary sponsor: {roles.get('Primary sponsor', 0)} · as an additional primary sponsor, "
+            f"shared with the lead: {roles.get('Additional primary sponsor', 0)}. The Role column says which."
+        )
         topics = stats.category_outcomes(led)
         topic_order = list(topics.groupby("category")["count"].sum().sort_values(ascending=False).index)
         st.altair_chart(charts.category_outcome_bars(topics, topic_order, mode), width="stretch")
@@ -613,7 +647,7 @@ def show_sponsored(sponsored: pd.DataFrame | None) -> None:
         st.dataframe(cosponsored[list(BILL_TABLE_COLUMNS)], hide_index=True, width="stretch", column_config=BILL_TABLE_COLUMNS)
 
 
-def show_votes(votes: pd.DataFrame | None, person_id: int) -> None:
+def show_votes(votes: pd.DataFrame | None, fetched: pd.Timestamp | None, person_id: int) -> None:
     st.markdown("#### Voting record")
     if votes is None:
         st.write(NOT_LOADED.format(what="their roll call votes"))
@@ -623,7 +657,7 @@ def show_votes(votes: pd.DataFrame | None, person_id: int) -> None:
         return
     vote_summary = stats.vote_record(votes, legislators.MISSED_VOTES)
     counts = " · ".join(f"{choice}: {vote_summary.counts.get(choice, 0):,}" for choice in legislators.VOTE_CHOICES)
-    st.caption(f"{vote_summary.roll_calls:,} roll calls this session. {counts}")
+    st.caption(f"{vote_summary.roll_calls:,} roll calls this session, fetched live {as_of(fetched)}. {counts}")
     show = st.segmented_control(
         "Show votes", ["No votes", "Missed votes", "All"], default="No votes", key=f"votes-{person_id}",
     )

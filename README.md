@@ -37,7 +37,7 @@ Run the tests with `pytest`.
 | **Timeline** | New legislation per week (bills / resolutions / amendments & substitutes), bills enacted over time, a topic-by-month heatmap |
 | **Categories** | Per-topic stats, the AI trends briefing, and every bill in the topic with its summary |
 | **Bill explorer** | A searchable, sortable table. Select a bill to see its summary, its full family (original, substitutes, amendments), its sponsors and its next step |
-| **Your legislators** | Enter a home address (or pick from a list) to find your state senator and representative. For each: contact details, committees, years in office, the legislation they led and co-sponsored (with pass rate and topics), every roll call vote (filter to their "no" votes or missed votes), and when their seat is next on the ballot |
+| **Your legislators** | Enter a home address (or pick from a list) to find your state senator and representative. For each: contact details, committees, years in office, the legislation they sponsored, split into lead (primary) sponsor, additional primary sponsor and co-sponsor (with how much passed, and topics), every roll call vote (filter to their "no" votes or missed votes), and when their seat is next on the ballot |
 
 The sidebar filters every tab by search text, category, type, chamber, outcome, ceremonial resolutions and your watchlist. To add bills to the watchlist, put their legislation ids in `data/watchlist.txt`, one per line (the id is the number in a bill page's `LegislationId=` URL).
 

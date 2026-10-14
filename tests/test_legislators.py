@@ -176,6 +176,21 @@ def test_sponsored_families_collapses_a_family_to_its_strongest_role(items):
     record = stats.sponsor_record(sponsored)
     assert (record.primary, record.primary_passed, record.cosponsored) == (1, 1, 1)
     assert record.primary_pass_rate == 1.0
+    assert stats.sponsorships_not_in_data(sponsorships, items) == 1  # id 999
+
+
+def test_sponsor_record_separates_lead_from_additional_primary_sponsors(items):
+    families = build_families(items)
+    sponsorships = legislators.tidy_sponsorships([
+        {"LegislationId": 1, "SponsorTypeName": "Additional Primary Sponsor"},  # HB 1 family: enacted
+        {"LegislationId": 5, "SponsorTypeName": "Primary Sponsor"},             # SB 7: in committee
+        {"LegislationId": 6, "SponsorTypeName": "Primary Sponsor"},             # HCR 3: adopted
+    ])
+    record = stats.sponsor_record(stats.sponsored_families(sponsorships, items, families))
+    assert (record.primary, record.primary_passed) == (2, 1)
+    assert (record.additional_primary, record.additional_primary_passed) == (1, 1)
+    assert record.cosponsored == 0
+    assert record.primary_pass_rate == 0.5  # SB 7 is still in committee, so it counts as not passed
 
 
 # ------------------------------------------------------------------ roll calls

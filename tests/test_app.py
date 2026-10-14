@@ -152,7 +152,7 @@ def test_failed_source_is_shown_as_unavailable_not_empty(stubs, source):
     unavailable = {label for label, (value, _) in metrics(app).items() if value == "Unavailable"}
     assert unavailable == {
         "votes": {"Roll calls voted"},
-        "sponsorships": {"Bills & resolutions led", "Passed", "Co-sponsored"},
+        "sponsorships": {"Primary sponsor", "Additional primary sponsor", "Co-sponsored"},
         "profile": {"First took office"},
     }[source]
 
@@ -162,3 +162,27 @@ def test_confirmed_empty_vote_record_says_so(stubs):
     shown = texts(pick_from_list(run_app(), senate=17))
     assert "The roll call feed lists no votes for them this session." in shown
     assert "Couldn't load" not in shown
+
+
+def test_sponsor_metrics_separate_lead_and_additional_primary_sponsors(stubs):
+    stubs.sponsorships = legislators.tidy_sponsorships([
+        {"LegislationId": 5, "SponsorTypeName": "Primary Sponsor"},             # SB 7: in committee
+        {"LegislationId": 6, "SponsorTypeName": "Primary Sponsor"},             # HCR 3: adopted
+        {"LegislationId": 1, "SponsorTypeName": "Additional Primary Sponsor"},  # HB 1: enacted
+    ])
+    app = pick_from_list(run_app(), senate=17)
+    shown = metrics(app)
+    assert shown["Primary sponsor"] == ("2", "1 passed (50%)")
+    assert shown["Additional primary sponsor"] == ("1", "1 passed")
+    assert "Passed** means enacted (bills) or adopted (resolutions)" in texts(app)
+    assert "Sponsorships fetched live" in texts(app)
+
+
+def test_sponsorships_newer_than_the_data_are_flagged(stubs):
+    stubs.sponsorships = legislators.tidy_sponsorships([
+        {"LegislationId": 5, "SponsorTypeName": "Primary Sponsor"},
+        {"LegislationId": 999, "SponsorTypeName": "Primary Sponsor"},  # filed after the CSV was downloaded
+    ])
+    app = pick_from_list(run_app(), senate=17)
+    assert metrics(app)["Primary sponsor"][0] == "1"
+    assert "1 item they sponsored is newer than the downloaded bill data" in texts(app)
