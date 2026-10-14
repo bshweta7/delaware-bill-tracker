@@ -74,6 +74,6 @@ legis.delaware.gov ──► legis_api ──► normalize ──► families �
 - Categories come from keyword rules, not a human. They're right most of the time, but expect some misfiled bills.
 - The site's "last action" date is the only action date the list endpoint provides. The "enacted over time" chart uses it as a stand-in for the signing date.
 - AI summaries are generated from each bill's title and synopsis, not its full text.
-- The **Your legislators** tab fetches live from legis.delaware.gov when you open a legislator, rather than from the CSV. Address lookups go to the [US Census geocoder](https://geocoding.geo.census.gov/) (free, no key); addresses aren't stored.
+- The **Your legislators** tab fetches live from legis.delaware.gov when you open a legislator, rather than from the CSV. Address lookups go to the [US Census geocoder](https://geocoding.geo.census.gov/) (free, no key). The app doesn't cache, log or write addresses to disk; an address stays in server memory only for that visitor's browser session.
 - "Years in office" is read from the free-text "Legislative Service" field on each profile, so it's only as accurate as that text.
 - The app can't yet tell which Senate seats are up at a given election (senators serve staggered four-year terms), so it links to the Department of Elections instead.

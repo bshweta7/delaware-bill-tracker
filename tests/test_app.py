@@ -131,3 +131,10 @@ def test_years_served_skips_a_break_in_service(stubs):
     first_took_office, served = metrics(pick_from_list(run_app(), senate=17))["First took office"]
     assert first_took_office == "2002"
     assert served == f"{date.today().year - 2010 + 4} years served"  # 2002-2006, then 2010 on
+
+
+def test_addresses_are_not_cached_across_visitors(stubs):
+    look_up_address(run_app(), "411 Legislative Ave, Dover, DE")
+    look_up_address(run_app(), "411 Legislative Ave, Dover, DE")  # a second visitor, same address
+    # Both lookups reach the geocoder: no server-side cache is holding the first visitor's address.
+    assert stubs.address_lookups == ["411 Legislative Ave, Dover, DE"] * 2

@@ -49,11 +49,6 @@ def cached_roster() -> pd.DataFrame:
     return legislators.roster()
 
 
-@st.cache_data(show_spinner="Looking up your districts…", ttl=86400)
-def cached_districts(address: str):
-    return find_districts(address)
-
-
 @st.cache_data(show_spinner="Loading legislator profile…", ttl=86400)
 def cached_profile(person_id: int) -> legislators.Profile:
     return legislators.fetch_profile(person_id)
@@ -410,6 +405,15 @@ BILL_TABLE_COLUMNS = {
 }
 
 
+ADDRESS_PRIVACY = (
+    "Your address is sent over HTTPS to the US Census Bureau's geocoder, which returns your "
+    "districts; the Census Bureau's own privacy policy covers what it keeps. This app doesn't "
+    "save your address to disk, log it or cache it for other visitors. It stays in memory only "
+    "for your browser session, so the form and result keep showing, and is discarded when the session "
+    "ends, shortly after you close the tab."
+)
+
+
 def choose_districts(seats: pd.DataFrame) -> tuple[int | None, int | None]:
     """Ask for an address (or a manual pick). Returns (senate district, house district)."""
     method = st.segmented_control(
@@ -431,12 +435,13 @@ def choose_districts(seats: pd.DataFrame) -> tuple[int | None, int | None]:
     with st.form("address"):
         address = st.text_input(
             "Home address", placeholder="411 Legislative Ave, Dover, DE 19901",
-            help="Sent to the US Census Bureau's geocoder to look up your districts. Not stored.",
+            help=ADDRESS_PRIVACY,
         )
         submitted = st.form_submit_button("Find my legislators", type="primary")
     if submitted and address.strip():
         try:
-            st.session_state["district_match"] = cached_districts(address.strip())
+            with st.spinner("Looking up your districts…"):
+                st.session_state["district_match"] = find_districts(address.strip())
         except AddressNotFound as error:
             st.session_state.pop("district_match", None)
             st.warning(str(error))
