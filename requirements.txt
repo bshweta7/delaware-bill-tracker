@@ -3,5 +3,4 @@ beautifulsoup4
 pandas
 streamlit
 altair
-anthropic
 pytest

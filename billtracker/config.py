@@ -1,4 +1,4 @@
-"""Project-wide settings: site URLs, file locations, and model choices."""
+"""Project-wide settings: site URLs and file locations."""
 
 from pathlib import Path
 
@@ -23,10 +23,7 @@ REQUEST_TIMEOUT_SECONDS = 60
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 LEGISLATION_CSV = DATA_DIR / "legislation.csv"
-SUMMARIES_JSON = DATA_DIR / "summaries.json"
 WATCHLIST_FILE = DATA_DIR / "watchlist.txt"
-
-SUMMARY_MODEL = "claude-opus-5-5"
 
 
 def bill_url(legislation_id: int) -> str:
