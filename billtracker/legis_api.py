@@ -102,6 +102,10 @@ class LegisClient:
             {"page": 1, "pageSize": 100},
             f"{chamber} roster",
         )
+        if len(payload["Data"]) < payload["Total"]:
+            raise LegisApiError(
+                f"The {chamber} roster was truncated ({len(payload['Data'])} of {payload['Total']} rows)."
+            )
         return payload["Data"]
 
     def fetch_sponsored_legislation(self, person_id: int, assembly_id: int) -> list[dict]:

@@ -103,3 +103,9 @@ def test_fetch_sponsored_legislation_rejects_truncated_results():
     session = GridSession({"Data": rows, "Total": 5, "Errors": None})
     with pytest.raises(LegisApiError, match="truncated"):
         LegisClient(session=session).fetch_sponsored_legislation(10, 153)
+
+
+def test_fetch_legislators_rejects_truncated_results():
+    session = GridSession({"Data": [{"PersonId": 1}], "Total": 21, "Errors": None})
+    with pytest.raises(LegisApiError, match="truncated"):
+        LegisClient(session=session).fetch_legislators("Senate")

@@ -53,6 +53,26 @@ def test_roster():
     assert legislators.label(leader) == "Sen. Jane Q. Doe (D), District 2"
 
 
+def full_roster() -> pd.DataFrame:
+    return pd.DataFrame(
+        [legislators.tidy_roster_row(roster_row(d, person_id=d), "Senate") for d in range(1, 22)]
+        + [legislators.tidy_roster_row(roster_row(d, person_id=100 + d), "House") for d in range(1, 42)]
+    )
+
+
+def test_missing_districts():
+    seats = full_roster()
+    assert legislators.missing_districts(seats) == {}
+    gappy = seats.drop(seats[(seats["chamber"] == "House") & seats["district"].isin([4, 40])].index)
+    assert legislators.missing_districts(gappy) == {"House": [4, 40]}
+
+
+def test_find_seat():
+    seats = full_roster()
+    assert legislators.find_seat(seats, "House", 41)["person_id"] == 141
+    assert legislators.find_seat(seats, "Senate", 22) is None
+
+
 # --------------------------------------------------------------------- profile
 
 PHOTO = b"\x89PNG fake image bytes"

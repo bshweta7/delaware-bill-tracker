@@ -21,6 +21,7 @@ from billtracker import config
 from billtracker.legis_api import LegisApiError, LegisClient
 
 CHAMBERS = ["Senate", "House"]
+SEATS = {"Senate": 21, "House": 41}  # fixed by the Delaware Constitution, art. II, sec. 2
 TITLES = {"Senate": "Senator", "House": "Representative"}
 PARTIES = {"D": "Democrat", "R": "Republican"}
 NO_BIOGRAPHY = "Contact for more information"
@@ -57,6 +58,23 @@ def tidy_roster_row(row: dict, chamber: str) -> dict:
         "profile_url": config.legislator_url(person_id) if person_id else None,
         "caucus_url": row["LegislatorDetailLink"],
     }
+
+
+def missing_districts(seats: pd.DataFrame) -> dict[str, list[int]]:
+    """Districts with no row in the roster, by chamber. Vacant seats have a row, so
+    anything missing means the site returned an incomplete list."""
+    missing = {}
+    for chamber, count in SEATS.items():
+        listed = set(seats.loc[seats["chamber"] == chamber, "district"])
+        gaps = [district for district in range(1, count + 1) if district not in listed]
+        if gaps:
+            missing[chamber] = gaps
+    return missing
+
+
+def find_seat(seats: pd.DataFrame, chamber: str, district: int) -> pd.Series | None:
+    rows = seats[(seats["chamber"] == chamber) & (seats["district"] == district)]
+    return rows.iloc[0] if not rows.empty else None
 
 
 def label(member: pd.Series | dict) -> str:

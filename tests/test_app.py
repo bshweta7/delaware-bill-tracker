@@ -112,3 +112,12 @@ def test_address_lookup_shows_both_legislators(stubs):
     shown = texts(app)
     assert "Senator Jane Doe" in shown
     assert "Representative John Roe" in shown
+
+
+def test_district_missing_from_roster_warns_instead_of_crashing(stubs):
+    stubs.match = DistrictMatch("1 MAIN ST, DOVER, DE, 19901", 17, 33)  # no House District 33 in the roster
+    app = look_up_address(run_app())
+    shown = texts(app)
+    assert "Couldn't find who represents House District 33" in shown
+    assert "Senator Jane Doe" in shown  # the senator still shows
+    assert "didn't list a House member for districts" in shown  # the stub roster is incomplete

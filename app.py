@@ -615,12 +615,21 @@ with legislator_tab:
         st.error(f"Couldn't load the list of legislators: {error}")
         seats = None
     if seats is not None:
+        for chamber, gaps in legislators.missing_districts(seats).items():
+            st.warning(
+                f"legis.delaware.gov didn't list a {chamber} member for district"
+                f"{'s' if len(gaps) > 1 else ''} {', '.join(map(str, gaps))}, so the list may be incomplete."
+            )
         senate_district, house_district = choose_districts(seats)
-        chosen = [
-            seats[(seats["chamber"] == chamber) & (seats["district"] == district)].iloc[0]
-            for chamber, district in (("Senate", senate_district), ("House", house_district))
-            if district is not None
-        ]
+        chosen = []
+        for chamber, district in (("Senate", senate_district), ("House", house_district)):
+            if district is None:
+                continue
+            member = legislators.find_seat(seats, chamber, district)
+            if member is None:
+                st.warning(f"Couldn't find who represents {chamber} District {district} on legis.delaware.gov.")
+            else:
+                chosen.append(member)
         if chosen:
             for panel, member in zip(st.tabs([legislators.label(m) for m in chosen]), chosen):
                 with panel:
