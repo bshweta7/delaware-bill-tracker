@@ -50,17 +50,12 @@ class LegisClient:
             raise LegisApiError("Could not find the current General Assembly id.")
         return int(match.group(1))
 
-    def fetch_page(self, assembly_id: int, page: int) -> dict:
-        """Fetch one page of legislation. Returns the raw ``{"Data", "Total"}`` payload."""
+    def _post_grid(self, url: str, data: dict, description: str) -> dict:
+        """POST to one of the site's grid endpoints and return its ``{"Data", "Total"}`` payload."""
+        # `sort` must be present (even empty) or the server redirects to an error page.
         response = self.session.post(
-            config.ALL_LEGISLATION_URL,
-            # `sort` must be present (even empty) or the server redirects to an error page.
-            data={
-                "page": page,
-                "pageSize": config.PAGE_SIZE,
-                "sort": "",
-                "selectedGA": assembly_id,
-            },
+            url,
+            data={"sort": "", **data},
             timeout=config.REQUEST_TIMEOUT_SECONDS,
             allow_redirects=False,
         )
@@ -69,11 +64,19 @@ class LegisClient:
             payload = response.json()
         except ValueError as error:
             raise LegisApiError(
-                f"Page {page} returned non-JSON (HTTP {response.status_code})."
+                f"{description} returned non-JSON (HTTP {response.status_code})."
             ) from error
         if payload.get("Errors"):
-            raise LegisApiError(f"Page {page} returned errors: {payload['Errors']}")
+            raise LegisApiError(f"{description} returned errors: {payload['Errors']}")
         return payload
+
+    def fetch_page(self, assembly_id: int, page: int) -> dict:
+        """Fetch one page of legislation. Returns the raw ``{"Data", "Total"}`` payload."""
+        return self._post_grid(
+            config.ALL_LEGISLATION_URL,
+            {"page": page, "pageSize": config.PAGE_SIZE, "selectedGA": assembly_id},
+            f"Page {page}",
+        )
 
     def fetch_all_legislation(self, assembly_id: int) -> list[dict]:
         """Fetch every piece of legislation (bills, resolutions, amendments...) in a session."""
@@ -91,3 +94,33 @@ class LegisClient:
         # De-duplicate in case rows shift between pages while we are fetching.
         unique_rows = {row["LegislationId"]: row for row in rows}
         return list(unique_rows.values())
+
+    def fetch_legislators(self, chamber: str) -> list[dict]:
+        """The current members of one chamber ("Senate" or "House"), one row per district."""
+        payload = self._post_grid(
+            config.LEGISLATOR_ROSTER_URLS[chamber],
+            {"page": 1, "pageSize": 100},
+            f"{chamber} roster",
+        )
+        if len(payload["Data"]) < payload["Total"]:
+            raise LegisApiError(
+                f"The {chamber} roster was truncated ({len(payload['Data'])} of {payload['Total']} rows)."
+            )
+        return payload["Data"]
+
+    def fetch_sponsored_legislation(self, person_id: int, assembly_id: int) -> list[dict]:
+        """Everything a legislator sponsored or co-sponsored in a session.
+
+        Unlike the All Legislation endpoint, this one honors large page sizes.
+        """
+        payload = self._post_grid(
+            config.SPONSORED_LEGISLATION_URL,
+            {"page": 1, "pageSize": 2000, "personId": person_id, "assemblyId": assembly_id},
+            f"Sponsored legislation for person {person_id}",
+        )
+        if len(payload["Data"]) < payload["Total"]:
+            raise LegisApiError(
+                f"Sponsored legislation for person {person_id} was truncated "
+                f"({len(payload['Data'])} of {payload['Total']} rows)."
+            )
+        return payload["Data"]

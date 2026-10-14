@@ -6,6 +6,7 @@ A Streamlit dashboard for every bill and resolution in the current Delaware Gene
 - sorts legislation into topic categories (Education, Environment & Energy, Health…)
 - shows how activity unfolds over the session
 - generates plain-language **AI summaries** of each bill, and trend briefings for each category, with Claude
+- looks up **your legislators** from your home address, with their sponsorship record, voting record, years in office and next election
 
 ## Quick start
 
@@ -36,6 +37,7 @@ Run the tests with `pytest`.
 | **Timeline** | New legislation per week (bills / resolutions / amendments & substitutes), bills enacted over time, a topic-by-month heatmap |
 | **Categories** | Per-topic stats, the AI trends briefing, and every bill in the topic with its summary |
 | **Bill explorer** | A searchable, sortable table. Select a bill to see its summary, its full family (original, substitutes, amendments), its sponsors and its next step |
+| **Your legislators** | Enter a home address (or pick from a list) to find your state senator and representative. For each: contact details, committees, years in office, the legislation they sponsored, split into lead (primary) sponsor, additional primary sponsor and co-sponsor (with how much passed, and topics), every roll call vote (filter to their "no" votes or missed votes), and when their seat is next on the ballot |
 
 The sidebar filters every tab by search text, category, type, chamber, outcome, ceremonial resolutions and your watchlist. To add bills to the watchlist, put their legislation ids in `data/watchlist.txt`, one per line (the id is the number in a bill page's `LegislationId=` URL).
 
@@ -59,6 +61,8 @@ legis.delaware.gov ──► legis_api ──► normalize ──► families �
 | `billtracker/charts.py` | Altair charts (colorblind-validated palette, light and dark) |
 | `billtracker/summaries.py` | Claude summaries with a hash-keyed JSON cache |
 | `billtracker/bill_detail.py` | Scrapes co-sponsors and "what happens next" from a bill page, on demand |
+| `billtracker/districts.py` | Address → Senate and House district, via the US Census geocoder |
+| `billtracker/legislators.py` | Legislator roster, profile pages (service, committees, contact), sponsorships and the roll call vote feed, on demand |
 | `billtracker/pipeline.py` | CLI that ties fetching and processing together |
 
 ### The CSV
@@ -70,3 +74,6 @@ legis.delaware.gov ──► legis_api ──► normalize ──► families �
 - Categories come from keyword rules, not a human. They're right most of the time, but expect some misfiled bills.
 - The site's "last action" date is the only action date the list endpoint provides. The "enacted over time" chart uses it as a stand-in for the signing date.
 - AI summaries are generated from each bill's title and synopsis, not its full text.
+- The **Your legislators** tab fetches live from legis.delaware.gov when you open a legislator, rather than from the CSV. Address lookups go to the [US Census geocoder](https://geocoding.geo.census.gov/) (free, no key). The app doesn't cache, log or write addresses to disk; an address stays in server memory only for that visitor's browser session.
+- "Years in office" is read from the free-text "Legislative Service" field on each profile, so it's only as accurate as that text.
+- The app can't yet tell which Senate seats are up at a given election (senators serve staggered four-year terms), so it links to the Department of Elections instead.
