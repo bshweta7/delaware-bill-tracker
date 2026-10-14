@@ -11,7 +11,7 @@ import re
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 import requests
@@ -273,3 +273,20 @@ def fetch_roll_calls(
             return parse_roll_calls(response.text)
         time.sleep(retry_delay * 2**attempt)
     raise LegisApiError(f"The roll call feed for person {person_id} kept returning an error page.")
+
+
+# ------------------------------------------------------------------- elections
+
+def general_election_day(year: int) -> date:
+    """The Tuesday after the first Monday in November."""
+    first = date(year, 11, 1)
+    first_monday = first + timedelta(days=(0 - first.weekday()) % 7)
+    return first_monday + timedelta(days=1)
+
+
+def next_general_election(today: date) -> date:
+    """Delaware holds state legislative elections in even years."""
+    year = today.year + (today.year % 2)
+    if year == today.year and today > general_election_day(year):
+        year += 2
+    return general_election_day(year)

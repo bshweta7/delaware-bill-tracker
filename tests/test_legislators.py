@@ -225,3 +225,19 @@ def test_fetch_roll_calls_gives_up():
     session = FlakyFeedSession(failures=legislators.FEED_ATTEMPTS)
     with pytest.raises(LegisApiError, match="error page"):
         legislators.fetch_roll_calls(10, 153, session=session, retry_delay=0)
+
+
+# ------------------------------------------------------------------- elections
+
+@pytest.mark.parametrize(
+    "today, expected",
+    [
+        (date(2026, 10, 14), date(2026, 11, 3)),
+        (date(2026, 11, 3), date(2026, 11, 3)),   # election day itself
+        (date(2026, 11, 4), date(2028, 11, 7)),
+        (date(2027, 3, 1), date(2028, 11, 7)),
+        (date(2030, 1, 1), date(2030, 11, 5)),
+    ],
+)
+def test_next_general_election(today, expected):
+    assert legislators.next_general_election(today) == expected
