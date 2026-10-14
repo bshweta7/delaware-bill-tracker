@@ -135,3 +135,46 @@ def family_members(items: pd.DataFrame, family_id: int) -> pd.DataFrame:
     """Every item in one family (original, substitutes, amendments), oldest first."""
     members = items[items["family_id"] == family_id]
     return members.sort_values("introduced").reset_index(drop=True)
+
+
+# ------------------------------------------------------------------ legislators
+
+SPONSOR_ROLE_ORDER = ["Primary sponsor", "Additional primary sponsor", "Co-sponsor"]
+
+
+@dataclass(frozen=True)
+class SponsorRecord:
+    primary: int  # families they were the lead or an additional primary sponsor on
+    primary_passed: int
+    cosponsored: int
+
+    @property
+    def primary_pass_rate(self) -> float:
+        return self.primary_passed / self.primary if self.primary else 0.0
+
+
+def sponsored_families(sponsorships: pd.DataFrame, items: pd.DataFrame, families: pd.DataFrame) -> pd.DataFrame:
+    """The families a legislator sponsored, with their strongest role on each.
+
+    Sponsorship can be on the original bill or on a substitute, so each is
+    mapped to its family; a legislator who sponsored both counts once.
+    """
+    family_of = items.set_index("legislation_id")["family_id"]
+    rank = {role: position for position, role in enumerate(SPONSOR_ROLE_ORDER)}
+    linked = sponsorships.assign(
+        family_id=sponsorships["legislation_id"].map(family_of),
+        rank=sponsorships["role"].map(rank).fillna(len(rank)),
+    ).dropna(subset=["family_id"])
+    strongest = linked.sort_values("rank").drop_duplicates("family_id")[["family_id", "role"]]
+    strongest["family_id"] = strongest["family_id"].astype(families["family_id"].dtype)
+    sponsored = families.merge(strongest, on="family_id")
+    return sponsored.sort_values("last_action", ascending=False, ignore_index=True)
+
+
+def sponsor_record(sponsored: pd.DataFrame) -> SponsorRecord:
+    is_primary = sponsored["role"] != "Co-sponsor"
+    return SponsorRecord(
+        primary=int(is_primary.sum()),
+        primary_passed=int((is_primary & sponsored["stage"].isin(SUCCESS_STAGES)).sum()),
+        cosponsored=int((~is_primary).sum()),
+    )

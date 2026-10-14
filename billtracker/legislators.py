@@ -1,8 +1,8 @@
-"""Legislators: who they are and how long they've served.
+"""Legislators: who they are, how long they've served, and what they sponsored.
 
-The roster comes from a JSON endpoint (see ``legis_api``). A legislator's
-profile (years of service, committees, contact details) is only published
-as an HTML page, which this module fetches and parses on demand.
+The roster and sponsorships come from JSON endpoints (see ``legis_api``). A
+legislator's profile (years of service, committees, contact details) is only
+published as an HTML page, which this module fetches and parses on demand.
 """
 
 import base64
@@ -173,3 +173,29 @@ def fetch_profile(person_id: int, session: requests.Session | None = None) -> Pr
     )
     response.raise_for_status()
     return parse_profile(response.text)
+
+
+# ---------------------------------------------------------------- sponsorships
+
+SPONSOR_ROLES = {
+    "Primary Sponsor": "Primary sponsor",
+    "Additional Primary Sponsor": "Additional primary sponsor",
+    "CoSponsor": "Co-sponsor",
+}
+
+
+def sponsored_legislation(person_id: int, assembly_id: int, client: LegisClient | None = None) -> pd.DataFrame:
+    """(legislation_id, role) for everything a legislator sponsored in a session."""
+    client = client or LegisClient()
+    rows = client.fetch_sponsored_legislation(person_id, assembly_id)
+    return tidy_sponsorships(rows)
+
+
+def tidy_sponsorships(rows: list[dict]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "legislation_id": [row["LegislationId"] for row in rows],
+            "role": [SPONSOR_ROLES.get(row["SponsorTypeName"], row["SponsorTypeName"]) for row in rows],
+        },
+        columns=["legislation_id", "role"],
+    )

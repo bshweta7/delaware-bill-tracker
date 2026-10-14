@@ -3,7 +3,8 @@ from datetime import date
 
 import pytest
 
-from billtracker import legislators
+from billtracker import legislators, pipeline, stats
+from billtracker.families import build_families
 from billtracker.legis_api import LegisClient
 
 
@@ -115,3 +116,26 @@ def test_parse_profile_without_details():
     profile = legislators.parse_profile(html)
     assert profile.biography is None
     assert profile.photo is None
+
+
+# ---------------------------------------------------------------- sponsorships
+
+@pytest.fixture
+def items(raw_rows):
+    return pipeline.build_items(raw_rows)
+
+
+def test_sponsored_families_collapses_a_family_to_its_strongest_role(items):
+    families = build_families(items)
+    sponsorships = legislators.tidy_sponsorships([
+        {"LegislationId": 1, "SponsorTypeName": "CoSponsor"},        # HB 1
+        {"LegislationId": 2, "SponsorTypeName": "Primary Sponsor"},  # HS 1 for HB 1
+        {"LegislationId": 5, "SponsorTypeName": "CoSponsor"},        # SB 7
+        {"LegislationId": 999, "SponsorTypeName": "CoSponsor"},      # not in our data
+    ])
+    sponsored = stats.sponsored_families(sponsorships, items, families)
+    assert dict(zip(sponsored["family_code"], sponsored["role"])) == {"HB 1": "Primary sponsor", "SB 7": "Co-sponsor"}
+
+    record = stats.sponsor_record(sponsored)
+    assert (record.primary, record.primary_passed, record.cosponsored) == (1, 1, 1)
+    assert record.primary_pass_rate == 1.0
