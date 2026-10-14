@@ -108,8 +108,24 @@ class Profile:
         """Year the legislator first joined either chamber, if the site says."""
         return min((term.start_year for term in self.terms), default=None)
 
-    def years_in_office(self, today: date) -> int | None:
-        return today.year - self.first_elected if self.first_elected else None
+    def years_served(self, today: date) -> int | None:
+        """Whole years in either chamber, not counting breaks in service.
+
+        Terms are merged first: back-to-back terms (House to 2018, Senate from
+        2018) don't double count the changeover year, and profiles that repeat
+        their service text don't count it twice.
+        """
+        if not self.terms:
+            return None
+        spans = sorted((term.start_year, term.end_year or today.year) for term in self.terms)
+        total, (start, end) = 0, spans[0]
+        for next_start, next_end in spans[1:]:
+            if next_start <= end:
+                end = max(end, next_end)
+            else:
+                total += end - start
+                start, end = next_start, next_end
+        return total + end - start
 
 
 # Service is free text typed by staff, in many styles:

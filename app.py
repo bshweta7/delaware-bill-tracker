@@ -513,11 +513,14 @@ def show_legislator(member: pd.Series) -> None:
 
     record = stats.sponsor_record(sponsored)
     next_election = legislators.next_general_election(today)
-    years = profile.years_in_office(today)
+    years = profile.years_served(today)
     cols = st.columns(5)
     cols[0].metric(
-        "In the legislature since", profile.first_elected or "—",
-        f"{years} year{'s' if years != 1 else ''}" if years else None, delta_color="off", delta_arrow="off",
+        "First took office", profile.first_elected or "—",
+        f"{years} year{'s' if years != 1 else ''} served" if years is not None else None,
+        delta_color="off", delta_arrow="off",
+        help="From the Legislative Service text on their profile. Years served add up each term, "
+        "in whole years, and leave out any breaks in service.",
     )
     cols[1].metric("Bills & resolutions led", record.primary)
     cols[2].metric(

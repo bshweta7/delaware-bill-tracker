@@ -1,5 +1,7 @@
 """Run the dashboard's Your legislators tab against stubbed data, with no network."""
 
+from datetime import date
+
 import pandas as pd
 import pytest
 import streamlit as st
@@ -121,3 +123,11 @@ def test_district_missing_from_roster_warns_instead_of_crashing(stubs):
     assert "Couldn't find who represents House District 33" in shown
     assert "Senator Jane Doe" in shown  # the senator still shows
     assert "didn't list a House member for districts" in shown  # the stub roster is incomplete
+
+
+def test_years_served_skips_a_break_in_service(stubs):
+    service = "House of Representatives, 2002 to 2006 Senate, 2010 to present"
+    stubs.profile = legislators.Profile(service_text=service, terms=legislators.parse_service(service))
+    first_took_office, served = metrics(pick_from_list(run_app(), senate=17))["First took office"]
+    assert first_took_office == "2002"
+    assert served == f"{date.today().year - 2010 + 4} years served"  # 2002-2006, then 2010 on

@@ -125,10 +125,26 @@ def test_parse_profile():
     assert profile.email == "Jane.Doe@delaware.gov"
     assert profile.phone == "302-744-4000"
     assert profile.first_elected == 2012
-    assert profile.years_in_office(date(2026, 10, 14)) == 14
+    assert profile.years_served(date(2026, 10, 14)) == 14  # House 2012-2018, then Senate
     assert profile.committees == [("Elections & Government Affairs", "Chair"), ("Joint Finance", "Member")]
     assert profile.biography == "Sen. Doe represents the 99th District."
     assert profile.photo == PHOTO
+
+
+@pytest.mark.parametrize(
+    "service, years",
+    [
+        ("House, 2010 - Present", 16),
+        ("Senate, 2018 to present House of Representatives, 2012 to 2018", 14),  # back to back
+        ("House of Representatives, 2002 to 2006 Senate, 2010 to present", 20),  # 4-year break
+        ("Senate, 2012 to present Senate, 2012 to present", 14),  # repeated text
+        ("Senate, February 15, 2025 - Present", 1),
+        ("Contact for more information", None),
+    ],
+)
+def test_years_served_excludes_breaks(service, years):
+    profile = legislators.Profile(terms=legislators.parse_service(service))
+    assert profile.years_served(date(2026, 10, 14)) == years
 
 
 def test_parse_profile_without_details():
