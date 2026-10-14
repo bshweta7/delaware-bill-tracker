@@ -45,9 +45,3 @@ def test_csv_round_trip(raw_rows, tmp_path):
     assert pd.api.types.is_datetime64_any_dtype(items["introduced"])
     assert set(families["family_code"]) == {"HB 1", "SB 7", "HCR 3"}
 
-
-def test_load_watchlist_ignores_blanks_and_comments(tmp_path):
-    path = tmp_path / "watchlist.txt"
-    path.write_text("142655\n\n# a comment\n142724  # inline note\n")
-    assert storage.load_watchlist(path) == {142655, 142724}
-    assert storage.load_watchlist(tmp_path / "missing.txt") == set()

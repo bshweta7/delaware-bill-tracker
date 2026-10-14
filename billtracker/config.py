@@ -23,7 +23,6 @@ REQUEST_TIMEOUT_SECONDS = 60
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 LEGISLATION_CSV = DATA_DIR / "legislation.csv"
-WATCHLIST_FILE = DATA_DIR / "watchlist.txt"
 
 
 def bill_url(legislation_id: int) -> str:
