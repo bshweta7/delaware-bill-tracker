@@ -66,3 +66,40 @@ def test_parse_bill_detail():
     assert detail["primary_sponsor"] == "Rep. Smith"
     assert detail["cosponsors"] == "Sen. Jones Sen. Lee"
     assert detail["next_step"] is None
+
+
+class GridSession:
+    """Serves one fixed payload for every grid POST and records the form data."""
+
+    def __init__(self, payload):
+        self.headers = {}
+        self.payload = payload
+        self.posts = []
+
+    def post(self, url, data, **kwargs):
+        self.posts.append((url, data))
+        return FakeResponse(self.payload)
+
+
+def test_fetch_legislators_uses_the_chamber_endpoint():
+    session = GridSession({"Data": [{"PersonId": 1}], "Total": 1, "Errors": None})
+    assert LegisClient(session=session).fetch_legislators("Senate") == [{"PersonId": 1}]
+    url, data = session.posts[0]
+    assert url.endswith("/json/Senate/GetSenators")
+    assert data["sort"] == ""  # the site errors without it
+
+
+def test_fetch_sponsored_legislation():
+    rows = [{"LegislationId": 1, "SponsorTypeName": "CoSponsor"}]
+    session = GridSession({"Data": rows, "Total": 1, "Errors": None})
+    assert LegisClient(session=session).fetch_sponsored_legislation(10, 153) == rows
+    assert session.posts[0][1] | {"pageSize": None} == {
+        "sort": "", "page": 1, "pageSize": None, "personId": 10, "assemblyId": 153,
+    }
+
+
+def test_fetch_sponsored_legislation_rejects_truncated_results():
+    rows = [{"LegislationId": 1, "SponsorTypeName": "CoSponsor"}]
+    session = GridSession({"Data": rows, "Total": 5, "Errors": None})
+    with pytest.raises(LegisApiError, match="truncated"):
+        LegisClient(session=session).fetch_sponsored_legislation(10, 153)

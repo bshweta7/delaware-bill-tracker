@@ -95,3 +95,28 @@ class LegisClient:
         unique_rows = {row["LegislationId"]: row for row in rows}
         return list(unique_rows.values())
 
+    def fetch_legislators(self, chamber: str) -> list[dict]:
+        """The current members of one chamber ("Senate" or "House"), one row per district."""
+        payload = self._post_grid(
+            config.LEGISLATOR_ROSTER_URLS[chamber],
+            {"page": 1, "pageSize": 100},
+            f"{chamber} roster",
+        )
+        return payload["Data"]
+
+    def fetch_sponsored_legislation(self, person_id: int, assembly_id: int) -> list[dict]:
+        """Everything a legislator sponsored or co-sponsored in a session.
+
+        Unlike the All Legislation endpoint, this one honors large page sizes.
+        """
+        payload = self._post_grid(
+            config.SPONSORED_LEGISLATION_URL,
+            {"page": 1, "pageSize": 2000, "personId": person_id, "assemblyId": assembly_id},
+            f"Sponsored legislation for person {person_id}",
+        )
+        if len(payload["Data"]) < payload["Total"]:
+            raise LegisApiError(
+                f"Sponsored legislation for person {person_id} was truncated "
+                f"({len(payload['Data'])} of {payload['Total']} rows)."
+            )
+        return payload["Data"]

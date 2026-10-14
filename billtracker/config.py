@@ -5,6 +5,11 @@ from pathlib import Path
 BASE_URL = "https://legis.delaware.gov"
 ALL_LEGISLATION_URL = f"{BASE_URL}/json/AllLegislation/GetAllLegislation"
 ALL_LEGISLATION_PAGE = f"{BASE_URL}/AllLegislation"
+LEGISLATOR_ROSTER_URLS = {
+    "Senate": f"{BASE_URL}/json/Senate/GetSenators",
+    "House": f"{BASE_URL}/json/House/GetRepresentatives",
+}
+SPONSORED_LEGISLATION_URL = f"{BASE_URL}/json/AssemblyMember/GetSponsoredLegislation"
 
 # The site ignores larger page sizes and always returns at most 20 rows.
 PAGE_SIZE = 20
