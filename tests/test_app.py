@@ -1,4 +1,4 @@
-"""Run the dashboard's Your legislators tab against stubbed data, with no network."""
+"""Run the Your Delaware Legislators page against stubbed data, with no network."""
 
 from datetime import date
 
@@ -7,7 +7,7 @@ import pytest
 import streamlit as st
 from streamlit.testing.v1 import AppTest
 
-from billtracker import config, districts, legislators, pipeline, storage, summaries
+from billtracker import __version__, config, districts, legislators, pipeline, storage
 from billtracker.districts import DistrictMatch
 from tests.test_legislators import ROLL_CALL_RSS, roster_row
 
@@ -47,9 +47,8 @@ class Stubs:
         return self._result(self.match)
 
 
-# The real loaders, captured before tests patch them to read from a temporary directory.
+# The real loader, captured before tests patch it to read from a temporary directory.
 _load_items = storage.load_items
-_SummaryStore = summaries.SummaryStore
 
 
 @pytest.fixture
@@ -58,8 +57,6 @@ def stubs(monkeypatch, tmp_path, raw_rows):
     storage.save_items(pipeline.build_items(raw_rows), csv)
     monkeypatch.setattr(config, "LEGISLATION_CSV", csv)
     monkeypatch.setattr(storage, "load_items", lambda: _load_items(csv))
-    monkeypatch.setattr(storage, "load_watchlist", lambda: set())
-    monkeypatch.setattr(summaries, "SummaryStore", lambda: _SummaryStore(tmp_path / "summaries.json"))
 
     stubs = Stubs()
     monkeypatch.setattr(legislators, "roster", lambda: stubs._result(stubs.roster))
@@ -194,3 +191,22 @@ def test_participation_explains_absent_and_not_voting(stubs):
     assert (voted.value, voted.delta) == ("67%", "missed 1 of 3")  # the fixture has one Absent
     assert '"Absent" and "Not Voting"' in voted.help
     assert '"Absent" and "Not Voting" (present but didn\'t vote) count as missed' in texts(app)
+
+
+def test_legislators_is_the_only_page(stubs):
+    app = run_app()
+    assert app.title[0].value == "Your Delaware Legislators"
+    assert not app.sidebar.children  # no filters
+    assert not app.tabs  # no dashboard tabs until legislators are chosen
+    look_up_address(app)
+    assert [tab.label for tab in app.tabs] == [
+        "Sen. Jane Doe (D), District 17", "Rep. John Roe (D), District 32",
+    ]
+    assert f"Version {__version__} (public beta)" in texts(app)
+
+
+def test_missing_data_has_no_public_download_button(stubs, tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "LEGISLATION_CSV", tmp_path / "missing.csv")
+    app = run_app()
+    assert "bill data isn't available right now" in app.info[0].value
+    assert not app.button  # visitors can't start a multi-minute download
