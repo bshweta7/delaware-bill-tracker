@@ -11,6 +11,9 @@ LEGISLATOR_ROSTER_URLS = {
 }
 SPONSORED_LEGISLATION_URL = f"{BASE_URL}/json/AssemblyMember/GetSponsoredLegislation"
 
+# Free, keyless US Census geocoder; returns state legislative districts for an address.
+CENSUS_GEOCODER_URL = "https://geocoding.geo.census.gov/geocoder/geographies/onelineaddress"
+
 # The site ignores larger page sizes and always returns at most 20 rows.
 PAGE_SIZE = 20
 REQUEST_HEADERS = {"User-Agent": "Mozilla/5.0 (delaware-bill-tracker)"}
